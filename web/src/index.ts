@@ -1,78 +1,143 @@
 import { Universe, Cell } from "wasm-game-of-life";
 import { memory } from "wasm-game-of-life/wasm_game_of_life_bg.wasm";
 
-const CELL_SIZE = 5;
-const CS = CELL_SIZE + 1;
+const isCanvasElement = (
+  element: HTMLElement | null
+): element is HTMLCanvasElement => !!element && element.nodeName === "CANVAS";
+
+enum CellColor {
+  ALIVE = "#000000",
+  DEAD = "#FFFFFF",
+}
+
 const GRID_COLOR = "#CCCCCC";
-const DEAD_COLOR = "#FFFFFF";
-const ALIVE_COLOR = "#000000";
 
-const universe = Universe.new();
-const height = universe.height();
-const width = universe.width();
-const canvas = document.getElementById("game") as HTMLCanvasElement;
-canvas.height = height * CS + 1;
-canvas.width = width * CS + 1;
+class GameOfLife {
+  private mem: WebAssembly.Memory;
 
-const context = canvas.getContext("2d");
+  private universe: Universe;
+  private width: number;
+  private height: number;
 
-const animate = (_: number) => {
-  universe.tick();
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
 
-  if (context) {
-    drawGrid(context);
-    drawCells(context);
+  private cellSize: number = 5; // px
+
+  private get adjCellSize() {
+    return this.cellSize + 1;
   }
 
-  requestAnimationFrame(animate);
-};
+  private fpsLimit: number = 60;
+  private previousDelta: number = 0;
 
-const drawGrid = (ctx: CanvasRenderingContext2D) => {
-  if (ctx) {
-    ctx.beginPath();
-    ctx.strokeStyle = GRID_COLOR;
+  constructor(fpsLimit?: number) {
+    this.fpsLimit = fpsLimit || this.fpsLimit;
 
-    for (let i = 0; i <= width; i++) {
-      ctx.moveTo(i * CS + 1, 0);
-      ctx.lineTo(i * CS + 1, CS * height + 1);
+    this.universe = Universe.new();
+    this.mem = memory;
+
+    this.width = this.universe.width();
+    this.height = this.universe.height();
+
+    const canvas = document.getElementById("game");
+
+    if (isCanvasElement(canvas)) {
+      this.canvas = canvas;
+      this.canvas.width = this.width * this.cellSize + 1;
+      this.canvas.height = this.height * this.cellSize + 1;
+    } else {
+      throw new Error("Unable to find canvas element");
     }
 
-    for (let j = 0; j <= height; j++) {
-      ctx.moveTo(0, j * CS + 1);
-      ctx.lineTo(CS * width + 1, j * CS + 1);
-    }
+    const context = this.canvas.getContext("2d");
 
-    ctx.stroke();
+    if (context) {
+      this.ctx = context;
+    } else {
+      throw new Error("Unable to get context from canvas");
+    }
   }
-};
 
-const getIndex = (row: number, column: number) => {
-  return row * width + column;
-};
+  public init() {
+    this.animate(0);
+  }
+  private animate(currentDelta: number) {
+    requestAnimationFrame(this.animate.bind(this));
 
-const drawCells = (ctx: CanvasRenderingContext2D) => {
-  const cellsPtr = universe.cells();
-  const cells = new Uint8Array(memory.buffer, cellsPtr, width * height);
+    const delta = currentDelta - this.previousDelta;
 
-  if (ctx) {
-    ctx.beginPath();
+    if (this.fpsLimit && delta < 1000 / this.fpsLimit) {
+      return;
+    }
 
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width; col++) {
-        const idx = getIndex(row, col);
+    this.universe.tick();
+    this.render();
 
-        ctx.fillStyle = cells[idx] === Cell.Dead ? DEAD_COLOR : ALIVE_COLOR;
+    this.previousDelta = currentDelta;
+  }
+  private render() {
+    this.drawGrid();
+    this.drawCells();
+  }
 
-        ctx.fillRect(col * CS + 1, row * CS + 1, CELL_SIZE, CELL_SIZE);
+  private getIndex(row: number, col: number) {
+    return row * this.width + col;
+  }
+
+  private drawCells() {
+    const cellsPtr = this.universe.cells();
+    const cells = new Uint8Array(
+      this.mem.buffer,
+      cellsPtr,
+      this.width * this.height
+    );
+
+    this.ctx.beginPath();
+
+    for (let row = 0; row < this.height; row++) {
+      for (let col = 0; col < this.width; col++) {
+        const idx = this.getIndex(row, col);
+
+        this.ctx.fillStyle =
+          cells[idx] === Cell.Dead ? CellColor.DEAD : CellColor.ALIVE;
+
+        this.ctx.fillRect(
+          col * this.adjCellSize + 1,
+          row * this.adjCellSize + 1,
+          this.cellSize,
+          this.cellSize
+        );
       }
     }
 
-    ctx.stroke();
+    this.ctx.stroke();
   }
-};
 
-if (context) {
-  drawGrid(context);
-  drawCells(context);
-  animate(0);
+  private drawGrid() {
+    this.ctx.beginPath();
+    this.ctx.strokeStyle = GRID_COLOR;
+
+    for (let i = 0; i < this.width; i++) {
+      this.ctx.moveTo(i * this.adjCellSize + 1, 0);
+      this.ctx.lineTo(
+        i * this.adjCellSize + 1,
+        this.adjCellSize * this.height + 1
+      );
+    }
+
+    for (let j = 0; j <= this.height; j++) {
+      this.ctx.moveTo(0, j * this.adjCellSize + 1);
+      this.ctx.lineTo(
+        this.adjCellSize * this.width + 1,
+        j * this.adjCellSize + 1
+      );
+    }
+
+    this.ctx.stroke();
+  }
 }
+
+const game = new GameOfLife(24);
+
+game.init();
