@@ -5,6 +5,14 @@ const isCanvasElement = (
   element: HTMLElement | null
 ): element is HTMLCanvasElement => !!element && element.nodeName === "CANVAS";
 
+const isButtonElement = (
+  element: HTMLElement | null
+): element is HTMLButtonElement => !!element && element.nodeName === "BUTTON";
+
+const isInput = (
+  element: HTMLElement | null
+): element is HTMLInputElement => !!element && element.nodeName === "INPUT";
+
 enum CellColor {
   ALIVE = "#000000",
   DEAD = "#FFFFFF",
@@ -22,6 +30,10 @@ class GameOfLife {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
 
+  private playButton: HTMLButtonElement;
+
+  private fpsRange: HTMLInputElement;
+
   private cellSize: number = 5; // px
 
   private get adjCellSize() {
@@ -30,6 +42,8 @@ class GameOfLife {
 
   private fpsLimit: number = 60;
   private previousDelta: number = 0;
+
+  private animationId: number | null = null;
 
   constructor(fpsLimit?: number) {
     this.fpsLimit = fpsLimit || this.fpsLimit;
@@ -41,6 +55,20 @@ class GameOfLife {
     this.height = this.universe.height();
 
     const canvas = document.getElementById("game");
+    const playButton = document.getElementById('play-pause');
+    const fpsRange = document.getElementById('fps-range');
+
+    if (isButtonElement(playButton)) {
+      this.playButton = playButton;
+    } else {
+      throw new Error("Unable to find play-pause button");
+    }
+
+    if (isInput(fpsRange)) {
+      this.fpsRange = fpsRange;
+    } else {
+      throw new Error("Unable to find fps range thing");
+    }
 
     if (isCanvasElement(canvas)) {
       this.canvas = canvas;
@@ -60,10 +88,47 @@ class GameOfLife {
   }
 
   public init() {
-    this.animate(0);
+    // this.animate(0);
+    this.render();
+    this.playButton.textContent = "play"
+
+    this.playButton.addEventListener('click', () => {
+      if (this.isPlaying) {
+        this.pause();
+      } else {
+        this.play();
+      }
+    });
+
+    this.canvas.addEventListener('click', (event) => {
+      const boundingRect = this.canvas.getBoundingClientRect();
+      const scaleX = this.canvas.width / boundingRect.width;
+      const scaleY = this.canvas.height / boundingRect.height;
+
+      const canvasLeft = (event.clientX - boundingRect.left) * scaleX;
+      const canvasTop = (event.clientY - boundingRect.top) * scaleY;
+
+      const row = Math.min(Math.floor(canvasTop / this.adjCellSize), this.canvas.height - 1);
+      const col = Math.min(Math.floor(canvasLeft / this.adjCellSize), this.canvas.width - 1);
+
+      if (row >= 0 && col >= 0) {
+        this.universe.toggle_cell(row, col);
+      }
+
+      this.drawGrid();
+      this.drawCells();
+    });
+    this.fpsRange.value = this.fpsLimit.toString();
+    this.fpsRange.addEventListener('input', (event) => {
+      if (event.currentTarget) {
+        const target = event.currentTarget as HTMLInputElement;
+        this.fpsLimit = parseInt(target.value);
+      }
+    })
+
   }
   private animate(currentDelta: number) {
-    requestAnimationFrame(this.animate.bind(this));
+    this.animationId = requestAnimationFrame(this.animate.bind(this));
 
     const delta = currentDelta - this.previousDelta;
 
@@ -79,6 +144,23 @@ class GameOfLife {
   private render() {
     this.drawGrid();
     this.drawCells();
+  }
+
+  get isPlaying() {
+    return this.animationId !== null;
+  }
+
+  play() {
+    this.playButton.textContent = "pause";
+    this.animationId = requestAnimationFrame(this.animate.bind(this));
+  }
+
+  pause() {
+    this.playButton.textContent = "play";
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+    }
+    this.animationId = null;
   }
 
   private getIndex(row: number, col: number) {
@@ -138,6 +220,6 @@ class GameOfLife {
   }
 }
 
-const game = new GameOfLife(24);
+const game = new GameOfLife();
 
 game.init();
